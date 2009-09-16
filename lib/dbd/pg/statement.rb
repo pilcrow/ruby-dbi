@@ -43,11 +43,7 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
             @db.start_transaction unless @db.in_transaction?
         end
 
-        if @db["pg_native_binding"]
-            pg_result = @db._exec_prepared(@stmt_name, *@bindvars)
-        else
-            pg_result = @db._exec_prepared(@stmt_name)
-        end
+        pg_result = @db._exec_prepared(@stmt_name, *@bindvars)
 
         @result = DBI::DBD::Pg::Tuples.new(@db, pg_result)
     rescue PGError, RuntimeError => err
@@ -112,14 +108,9 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
 
     # prepare the statement at a lower level.
     def internal_prepare
-        if @db["pg_native_binding"]
-            unless @prepared
-                @stmt = @db._prepare(@stmt_name, self.class.translate_param_markers(@sql))
-            end
-        else
-            internal_finish
-            @stmt = @db._prepare(@stmt_name, DBI::SQL::PreparedStatement.new(DBI::DBD::Pg, @sql).bind(@bindvars))
-        end
+        return if @prepared
+
+        @stmt = @db._prepare(@stmt_name, self.class.translate_param_markers(@sql))
         @prepared = true
     end
 

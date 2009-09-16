@@ -67,41 +67,28 @@ class TestDbdPostgres < DBDConfig.testbase(:postgresql)
         end
     end
 
-    def test_binding
-        assert(@dbh["pg_native_binding"])
+    def test_pg_native_binding_deprecated
+        save_warn = $-w
 
-        assert_raises(DBI::ProgrammingError) do
-            @sth = @dbh.prepare("select * from names where age IS NOT ?")
-            @sth.execute("NULL")
-            @sth.finish
-        end
+        $-w = nil  # same as -W0
 
+        # 'pg_native_binding' is faux-supported, hardcoded to true
+        # and accepting any true assignment
         assert_nothing_raised do
-            @dbh["pg_native_binding"] = false
-            @sth = @dbh.prepare("select * from names where age IS NOT ? order by age")
-            @sth.execute("NULL")
-            assert_equal(
-                [
-                    ["Joe", 19],
-                    ["Bob", 21],
-                    ["Jim", 30],
-                ],
-                @sth.fetch_all
-            )
-
-            @sth.finish
-
-            @sth = @dbh.prepare("select * from names where age = ?")
-            @sth.execute(19)
-            assert_equal(
-                [
-                    ["Joe", 19]
-                ],
-                @sth.fetch_all
-            )
-
-            @sth.finish
+            assert(true == @dbh['pg_native_binding'])
+            @dbh['pg_native_binding'] = 'Yes, please'
+            assert(true == @dbh['pg_native_binding'])
         end
+
+        assert_raises(DBI::InterfaceError) do
+            @dbh['pg_native_binding'] = false
+        end
+
+        assert_raises(DBI::InterfaceError) do
+            @dbh['pg_native_binding'] = nil
+        end
+    ensure
+        $-w = save_warn
     end
 
     def test_function_multiple_return_values

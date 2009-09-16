@@ -34,7 +34,6 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
     # * AutoCommit: 'unchained' mode in PostgreSQL. Commits after each
     #   statement execution. 
     # * pg_client_encoding: set the encoding for the client.
-    # * pg_native_binding: Boolean. Indicates whether to use libpq native
     #   binding or DBI's inline binding. Defaults to true.
     #
     def initialize(dbname, user, auth, attr)
@@ -72,7 +71,6 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
         end
 
         @attr.each { |k,v| self[k] = v} 
-        @attr["pg_native_binding"] = true unless @attr.has_key? "pg_native_binding"
 
         load_type_map
 
@@ -255,6 +253,9 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
             @connection.client_encoding
         when 'NonBlocking'
             @attr['pg_async']
+        when 'pg_native_binding'                  # DEPRECATED
+            warn "Option '#{attr}' is deprecated"
+            true
         else
             @attr[attr]
         end
@@ -282,8 +283,14 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
             # value is assigned to @attr below
         when 'pg_client_encoding'
             @connection.set_client_encoding(value)
-        when 'pg_native_binding'
-            @attr[attr] = value
+        when 'pg_native_binding'                    # DEPRECATED
+            # Unecessary and (previously) incorrect when disabled, as
+            # <= 0.3.8 did not quote/escape properly
+            if value
+              warn "Option '#{attr}' is deprecated"
+            else
+              raise DBI::InterfaceError, "Disabling '#{attr}' is not supported"
+            end
         else
             if attr =~ /^pg_/ or attr != /_/
                 raise DBI::NotSupportedError, "Option '#{attr}' not supported"
