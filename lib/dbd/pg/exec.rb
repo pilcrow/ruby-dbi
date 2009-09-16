@@ -15,6 +15,10 @@ module DBI::DBD::Pg
             @pg_conn.exec_prepared(stmt_name, parameters)
         end
 
+        def get_copy_data
+            @pg_conn.get_copy_data
+        end
+
         def prepare(stmt_name, sql)
             @pg_conn.prepare(stmt_name, sql)
         end
@@ -36,6 +40,15 @@ module DBI::DBD::Pg
             @pg_conn.send_query_prepared(stmt_name, parameters)
             @pg_conn.block()
             @pg_conn.get_last_result()
+        end
+
+        def get_copy_data
+            ret = @pg_conn.get_copy_data(true)
+            if ret == false # explicitly false, not merely nil
+                @pg_conn.block()
+                ret = @pg_conn.get_copy_data(true)
+            end
+            ret
         end
 
         def prepare(stmt_name, sql)
