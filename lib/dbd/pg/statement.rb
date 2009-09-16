@@ -134,7 +134,7 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
     #                 '$' + i.to_s
     #               end
     def self.translate_param_markers(sql)
-        translator = DBI::SQL::PreparedStatement.new(DummyQuoter.new, sql)
+        translator = DBI::SQL::PreparedStatement.new(DBI::DBD::Pg, sql)
         if translator.unbound.size > 0
             arr = (1..(translator.unbound.size)).collect{|i| "$#{i}"}
             sql = translator.bind( arr )
@@ -155,19 +155,4 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
             end
         end
     end
-
-
-
-    #
-    # A native binding helper.
-    #
-    # XXX - is this needed at all?
-    #
-    class DummyQuoter
-        # dummy to substitute ?-style parameter markers by :1 :2 etc.
-        def quote(str)
-            str
-        end
-    end
-
 end # Statement
