@@ -29,21 +29,13 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
     #
     # See DBI::BaseDatabase#execute.
     #
-    # This method will make use of PostgreSQL's native BLOB support if
-    # DBI::Binary objects are passed in.
-    #
     def execute
-        # replace DBI::Binary object by oid returned by lo_import 
-        @bindvars.collect! do |var|
-            if var.is_a? DBI::Binary then
-                oid = @db.__blob_create(PGconn::INV_WRITE)
-                @db.__blob_write(oid, var.to_s)
-                oid 
-            else
-                var
-            end
+        # We presently have to do the DBI::Binary -> BLOB conversion ourself.
+        # See DBI::DBD::Pg::Database#convert_if_binary
+        @bindvars.collect! do |param|
+            @db._convert_if_binary(param)
         end
-        
+ 
         internal_prepare
 
         if not @db['AutoCommit'] then
@@ -112,16 +104,6 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
 
     private 
 
-    #
-    # A native binding helper.
-    #
-    class DummyQuoter
-        # dummy to substitute ?-style parameter markers by :1 :2 etc.
-        def quote(str)
-            str
-        end
-    end
-
     # finish the statement at a lower level
     def internal_finish
         @result.finish if @result
@@ -132,7 +114,7 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
     def internal_prepare
         if @db["pg_native_binding"]
             unless @prepared
-                @stmt = @db._prepare(@stmt_name, translate_param_markers(@sql))
+                @stmt = @db._prepare(@stmt_name, self.class.translate_param_markers(@sql))
             end
         else
             internal_finish
@@ -140,6 +122,8 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
         end
         @prepared = true
     end
+
+    # -- class methods --
 
     # Prepare the given SQL statement, returning its PostgreSQL string
     # handle.  ?-style parameters are translated to $1, $2, etc.
@@ -149,7 +133,7 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
     #         sql = DBI::Utils::convert_placeholders(sql) do |i|
     #                 '$' + i.to_s
     #               end
-    def translate_param_markers(sql)
+    def self.translate_param_markers(sql)
         translator = DBI::SQL::PreparedStatement.new(DummyQuoter.new, sql)
         if translator.unbound.size > 0
             arr = (1..(translator.unbound.size)).collect{|i| "$#{i}"}
@@ -157,4 +141,33 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
         end
         sql
     end
+ 
+    # For now, simply replace DBI::Binary object by oid returned by
+    # lo_import 
+    def self.convert_bind_params!(*params)
+        params.collect! do |var|
+            if var.is_a? DBI::Binary then
+                oid = @db.__blob_create(PGconn::INV_WRITE)
+                @db.__blob_write(oid, var.to_s)
+                oid 
+            else
+                var
+            end
+        end
+    end
+
+
+
+    #
+    # A native binding helper.
+    #
+    # XXX - is this needed at all?
+    #
+    class DummyQuoter
+        # dummy to substitute ?-style parameter markers by :1 :2 etc.
+        def quote(str)
+            str
+        end
+    end
+
 end # Statement

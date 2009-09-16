@@ -228,6 +228,27 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
         DBI::DBD::Pg::Statement.new(self, statement)
     end
 
+    def do(statement, *bindvars)
+        # bindvars are already converted by DBI::DatabaseHandle#do, except
+        # for DBI::Binary parameters -- see _convert_if_binary
+        statement = DBI::DBD::Pg::Statement.translate_param_markers(statement)
+        bindvars.collect! do |param|
+            _convert_if_binary(param)
+        end
+        pg_result = @pgexec.exec(statement, bindvars)
+
+        case pg_result.result_status
+        when ::PGresult::PGRES_COMMAND_OK
+            pg_result.cmd_tuples
+        when ::PGresult::PGRES_TUPLES_OK
+            pg_result.ntuples
+        else
+            -1
+        end
+    rescue PGError => err
+        raise DBI::ProgrammingError.new(err.message)
+    end
+
     def [](attr)
         case attr
         when 'pg_client_encoding'
@@ -316,6 +337,18 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
 
     def _prepare(stmt_name, sql)
         @pgexec.prepare(stmt_name, sql)
+    end
+
+    # DBI::Util::ConvParam / TypeUtil do not yet understand per-connection
+    # parameter conversion, but we must handle DBI::Binary on a per-connection
+    # basis.
+    #
+    # See DBI::DBD::Pg::Database#do and Statement#execute
+    def _convert_if_binary(obj)
+        return obj unless obj.is_a?(DBI::Binary)
+        oid = __blob_create(PGconn::INV_WRITE)
+        __blob_write(oid, obj.to_s)
+        oid
     end
 
     private 
@@ -513,4 +546,64 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
     rescue PGError => err
         raise DBI::DatabaseError.new(err.message) 
     end
+
+    #
+    # Return a row of table data readied by PostgreSQL's
+    # "COPY tbl TO STDOUT" command.
+    #
+    # Example:
+    #
+    #   dbh.do("COPY tbl TO STDOUT")
+    #   while ln = dbh.func :get_copy_data
+    #     p ln                         # => "foo\tbar\n"  (etc.)
+    #   end
+    #
+    # Note that it is _not_ safe to interrupt a COPY command and
+    # +:get_copy_data+ loop with other queries on the same db connection.
+    #
+    def __get_copy_data
+      ret = @pgexec.get_copy_data
+      if ret.nil? and self['pg_async']
+        # advance past the COPY_OUT state if this is our last
+        @connection.get_last_result rescue nil
+      end
+
+      ret
+    rescue PGError => err
+        raise DBI::DatabaseError.new(err.message) 
+    end
+
+    #
+    # Import a row of data to the table specified by PostgreSQL's
+    # "COPY tbl FROM STDIN" command.
+    #
+    # Example:
+    #
+    #   dbh.do("COPY tbl FROM STDIN")
+    #   dbh.func :put_copy_data, "foo\tbar\n"
+    #   dbh.func :put_copy_end
+    #
+    # Note that it is _not_ safe to interrupt a COPY command and
+    # +:put_copy_data+ loop with other queries on the same db connection.
+    #
+    def __put_copy_data(ln)
+        @connection.put_copy_data(ln)
+    rescue PGError => err
+        raise DBI::DatabaseError.new(err.message) 
+    end
+
+    #
+    # Instruct the server that bulk data import via :put_copy_data
+    # is finished.  Optionally supply a string error message, which
+    # will force termination of the COPY via DBI::DatabaseError.
+    #
+    def __put_copy_end(errmsg = nil)
+        # ??? - return a PGResult object here (don't forget to take
+        #       pg_async into account)
+        args = errmsg ? [errmsg] : []
+        @connection.put_copy_end(*args)
+    rescue PGError => err
+        raise DBI::DatabaseError.new(err.message) 
+    end
+
 end # Database
