@@ -141,18 +141,4 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
         end
         sql
     end
- 
-    # For now, simply replace DBI::Binary object by oid returned by
-    # lo_import 
-    def self.convert_bind_params!(*params)
-        params.collect! do |var|
-            if var.is_a? DBI::Binary then
-                oid = @db.__blob_create(PGconn::INV_WRITE)
-                @db.__blob_write(oid, var.to_s)
-                oid 
-            else
-                var
-            end
-        end
-    end
 end # Statement
