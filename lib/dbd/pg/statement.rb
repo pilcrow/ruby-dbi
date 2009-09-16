@@ -110,7 +110,22 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
     def internal_prepare
         return if @prepared
 
-        @stmt = @db._prepare(@stmt_name, self.class.translate_param_markers(@sql))
+        begin
+            pg_parameters = self.class.translate_param_markers(@sql)
+            @stmt = @db._prepare(@stmt_name, pg_parameters)
+        rescue ::PGError => e
+            # Recover from 'duplicate_prepared_statement' error (SQLSTATE
+            # 42P05), which can happen if an un-finish()d Pg::Stmt was
+            # finalized and its object ID re-used for this Pg::Stmt.
+            # [Bug rf#27113]
+            #
+            sqlstate = e.result.result_error_field(::PGresult::PG_DIAG_SQLSTATE) rescue nil
+            raise e unless sqlstate == '42P05'
+
+            @db._exec("DEALLOCATE \"#{@stmt_name}\"") rescue nil
+            @stmt = @db._prepare(@stmt_name, pg_parameters)
+        end
+
         @prepared = true
     end
 
