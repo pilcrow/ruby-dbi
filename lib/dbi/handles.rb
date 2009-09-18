@@ -30,17 +30,42 @@ module DBI
         # prepended to them before calling, and the DBD must define them as
         # such for them to work.
         #
-        def func(function, *values)
-            if @handle.respond_to?("__" + function.to_s) then
-                @handle.send("__" + function.to_s, *values)  
-            else
-                raise InterfaceError, "Driver specific function <#{function}> not available."
-            end
-        rescue ArgumentError
-            raise InterfaceError, "Wrong # of arguments for driver specific function"
+        def func(function, *values, &block)
+            @handle.send('__' + function.to_s, *values, &block)
+        rescue
+            # This is a bit of work to distinguish caller error (your fault!)
+            # from implementor error (my fault!)
+            name = '__' + function.to_s
+            caller_error = \
+                case $!
+                when NoMethodError
+                    "not available" unless @handle.respond_to?(name)
+                when ArgumentError
+                    method = @handle.method(name)
+                    "wrong number of arguments (#{values.size} for #{_hard_arity(method)}" unless _args_match_arity?(method, values)
+                when LocalJumpError
+                    # good effort, works under MRI 1.8 and 1.9
+                    "no block given" if $!.backtrace[0] =~ %r"\b#{Regexp.quote(name)}\b"
+                end
+            raise InterfaceError, "<#{function}> #{caller_error}" if caller_error
+            raise # it's the implementor's fault
         end
 
-        # error functions?
+        private
+        # return the minimum no. of necessary arguments for method
+        def _args_match_arity?(method, args)
+            arity = method.arity
+            return (arity >= 0)                ?
+                   args.size == arity          :
+                   args.size >= (arity.abs - 1)
+        end
+
+        # return the minimum no. of necessary arguments for method
+        def _hard_arity(method)
+            arity = method.arity
+            return (arity >= 0) ? arity : (arity.abs - 1)
+        end
+
     end
 end
 
