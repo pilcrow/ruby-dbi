@@ -36,38 +36,32 @@ module DBI
             # This is a bit of work to distinguish caller error (your fault!)
             # from implementor error (my fault!)
             name = '__' + function.to_s
-            caller_error = \
-                case $!
-                when NoMethodError
-                    "not available" unless @handle.respond_to?(name)
-                when ArgumentError
-                    method = @handle.method(name)
-                    "wrong number of arguments (#{values.size} for #{_hard_arity(method)}" unless _args_match_arity?(method, values)
-                when LocalJumpError
-                    # good effort, works under MRI 1.8 and 1.9
-                    "no block given" if $!.backtrace[0] =~ %r"\b#{Regexp.quote(name)}\b"
+            caller_err = nil
+
+            case $!
+            when NoMethodError
+                unless @handle.respond_to?(name)
+                    caller_err = "not available"
                 end
-            raise InterfaceError, "<#{function}> #{caller_error}" if caller_error
-            raise # it's the implementor's fault
-        end
+            when ArgumentError
+                arity = @handle.method(name).arity
+                if (arity >= 0 and values.size != arity) \
+                   or \
+                   (values.size < (arity.abs - 1))
+                    caller_err = "wrong number of arguments"
+                end
+            when LocalJumpError
+                # good effort, works under MRI 1.8 and 1.9
+                if !block_given? and $!.backtrace[0] =~ %r"\b#{Regexp.quote(name)}\b"
+                    caller_err = "no block given"
+                end
+            end
 
-        private
-        # return the minimum no. of necessary arguments for method
-        def _args_match_arity?(method, args)
-            arity = method.arity
-            return (arity >= 0)                ?
-                   args.size == arity          :
-                   args.size >= (arity.abs - 1)
+            raise InterfaceError, "<#{function}> #{caller_err}" if caller_err
+            raise # it's the implementor's fault, pass it on
         end
-
-        # return the minimum no. of necessary arguments for method
-        def _hard_arity(method)
-            arity = method.arity
-            return (arity >= 0) ? arity : (arity.abs - 1)
-        end
-
-    end
-end
+    end #-- class Handle
+end #-- module DBI
 
 require 'dbi/handles/driver'
 require 'dbi/handles/database'
