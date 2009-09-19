@@ -1,22 +1,16 @@
 @class = Class.new(DBDConfig.testbase(DBDConfig.current_dbtype)) do
 
-    def extend_handle
-        class << @dbh.handle
-            yield
-        end
-    end
-
     # Add a testing accessor var to the underlying @handle
     def setup
         super
-        extend_handle do
-            class_eval { attr_accessor :__var }
+        class << @dbh.handle
+            attr_accessor :__var
         end
     end
 
     def test_func_arg_err_nullary
-        extend_handle do
-            def __dbd_general_test_nullary; __var = "ok" end
+        class << @dbh.handle
+            def __dbd_general_test_nullary; self.__var = "ok" end
         end
 
         assert_nil @dbh.handle.__var
@@ -35,8 +29,8 @@
     end
 
     def test_func_arg_err_nullary_plus
-        extend_handle do
-            def __dbd_general_test_nullary_plus(*a); __var = "ok" end
+        class << @dbh.handle
+            def __dbd_general_test_nullary_plus(*optional); self.__var = "ok" end
         end
 
         assert_nil @dbh.handle.__var
@@ -49,8 +43,8 @@
     end
 
     def test_func_arg_err_unary
-        extend_handle do
-            def __dbd_general_test_unary(arg); __var = arg end
+        class << @dbh.handle
+            def __dbd_general_test_unary(a); self.__var = a end
         end
 
         assert_nil @dbh.handle.__var
@@ -69,8 +63,8 @@
     end
 
     def test_func_arg_err_unary_plus
-        extend_handle do
-            def __dbd_general_test_unary_plus(arg, *optional); __var = arg end
+        class << @dbh.handle
+            def __dbd_general_test_unary_plus(a, *optional); self.__var = a    end
         end
 
         assert_nil @dbh.handle.__var
@@ -91,7 +85,7 @@
     end
 
     def test_func_block
-        extend_handle do
+        class << @dbh.handle
             def __dbd_general_test_block(*a); yield end
         end
 
@@ -105,7 +99,7 @@
     end
 
     def test_implementor_argument_error
-        extend_handle do
+        class << @dbh.handle
             def __dbd_general_test_argument_error
                 raise ArgumentError, "contrived"
             end
@@ -116,7 +110,7 @@
     end
 
     def test_implementor_no_method
-        extend_handle do
+        class << @dbh.handle
             def __dbd_general_test_no_method
                 raise NoMethodError, "contrived"
             end
@@ -127,7 +121,7 @@
     end
 
     def test_implementor_local_jump_error
-        extend_handle do
+        class << @dbh.handle
             def __dbd_general_ad_hoc_requires_block
                 yield
             end
