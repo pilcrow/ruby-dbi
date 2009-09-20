@@ -1,0 +1,17 @@
+Handle
+	- dummy_handle
+
+DatabaseHandle cleanup
+	- reimplement execute in terms of prepare/execute
+	- call StatementHandle::check_statement
+	- AFNP/NilHandle
+
+StatementHandle cleanup
+	- AFNP/NilHandle
+	- cancel implies resetting @fetchable
+	- 
+
+QUESTIONS
+	- StmtH: is cancel after a successful fetch needed??
+	- StmtH: can we implement all fetch() in terms of one another?
+	- Handle:  should offer [] and []= ?  Should inherit attrs?
