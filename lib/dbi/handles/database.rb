@@ -30,7 +30,7 @@ module DBI
         # Boolean if we are still connected to the database. See #ping.
         #
         def connected?
-            not @handle.nil?
+            @handle != dummy_handle
         end
 
         #
@@ -38,9 +38,8 @@ module DBI
         # already done prior.
         #
         def disconnect
-            sanity_check
             @handle.disconnect
-            @handle = nil
+            @handle = dummy_handle
         end
 
         #
@@ -49,48 +48,41 @@ module DBI
         # BaseStatement#finish it when the block is done executing.
         #
         def prepare(stmt)
-            sanity_check(stmt)
+            # One of two sanity_check calls, the other in #do()
+            StatementHandle::sanity_check(stmt)
             @last_statement = stmt
-            sth = StatementHandle.new(@handle.prepare(stmt), false, true, @convert_types)
+
+            sth = StatementHandle.new(@handle.prepare(stmt), @convert_types)
             # FIXME trace sth.trace(@trace_mode, @trace_output)
             sth.dbh = self
             sth.raise_error = raise_error
 
-            if block_given?
-                begin
-                    yield sth
-                ensure
-                    sth.finish unless sth.finished?
-                end
-            else
-                return sth
-            end 
+            return sth unless block_given?
+
+            begin
+              yield sth
+            ensure
+              sth.finish unless sth.finished?
+            end
         end
 
         #
-        # Prepare and execute a statement. It has block semantics equivalent to #prepare.
+        # Prepare and execute a statement. It has block semantics equivalent
+        # to #prepare.
         #
         def execute(stmt, *bindvars)
-            sanity_check(stmt)
-
-            @last_statement = stmt
-            if @convert_types
-                bindvars = DBI::Utils::ConvParam.conv_param(driver_name, *bindvars)
-            end
-
-            sth = StatementHandle.new(@handle.execute(stmt, *bindvars), true, true, @convert_types, true)
-            # FIXME trace sth.trace(@trace_mode, @trace_output)
-            sth.dbh = self
-            sth.raise_error = raise_error
-
+            # Changed 2009-09-19 (from 0.4.3) to be implemented in terms of
+            # prepare/execute.  DBD::Driver::execute() is obsolete.
+            # 
             if block_given?
-                begin
+                prepare(stmt) do |sth|
+                    sth.execute(*bindvars) # StatementHandle does param conversion
                     yield sth
-                ensure
-                    sth.finish unless sth.finished?
                 end
             else
-                return sth
+                sth = prepare(stmt)
+                sth.execute()
+                sth
             end 
         end
 
@@ -100,7 +92,9 @@ module DBI
         # #execute and #prepare. Should return a row modified count.
         #
         def do(stmt, *bindvars)
-            sanity_check(stmt)
+            # We sanity_check and convert parameters ourselves, since we're
+            # bypassing StatementHandle creation...
+            StatementHandle::sanity_check(stmt)
 
             @last_statement = stmt
             @handle.do(stmt, *DBI::Utils::ConvParam.conv_param(driver_name, *bindvars))
@@ -110,7 +104,6 @@ module DBI
         # Executes a statement and returns the first row from the result.
         #
         def select_one(stmt, *bindvars)
-            sanity_check(stmt)
             row = nil
             execute(stmt, *bindvars) do |sth|
                 row = sth.fetch 
@@ -123,7 +116,6 @@ module DBI
         # is given, it is executed for each row.
         # 
         def select_all(stmt, *bindvars, &p)
-            sanity_check(stmt)
             rows = nil
             execute(stmt, *bindvars) do |sth|
                 if block_given?
@@ -139,7 +131,6 @@ module DBI
         # Return the name of the database we are connected to.
         #
         def database_name
-            sanity_check
             @handle.database_name
         end
 
@@ -147,7 +138,6 @@ module DBI
         # Return the tables available to this DatabaseHandle as an array of strings.
         #
         def tables
-            sanity_check
             @handle.tables
         end
 
@@ -157,7 +147,6 @@ module DBI
         # this method must provide.
         #
         def columns( table )
-            sanity_check
             @handle.columns( table ).collect {|col| ColumnInfo.new(col) }
         end
 
@@ -167,7 +156,6 @@ module DBI
         # is an active operation that will contact the database.
         #
         def ping
-            sanity_check
             @handle.ping
         end
 
@@ -175,7 +163,6 @@ module DBI
         # Attempt to escape the value, rendering it suitable for inclusion in a SQL statement.
         #
         def quote(value)
-            sanity_check
             @handle.quote(value)
         end
 
@@ -183,7 +170,6 @@ module DBI
         # Force a commit to the database immediately.
         #
         def commit
-            sanity_check
             @handle.commit
         end
 
@@ -191,7 +177,6 @@ module DBI
         # Force a rollback to the database immediately.
         #
         def rollback
-            sanity_check
             @handle.rollback
         end
 
@@ -201,7 +186,6 @@ module DBI
         # Otherwise, commit occurs.
         #
         def transaction
-            sanity_check
             raise InterfaceError, "No block given" unless block_given?
 
             commit
@@ -216,26 +200,12 @@ module DBI
 
         # Get an attribute from the DatabaseHandle.
         def [] (attr)
-            sanity_check
             @handle[attr]
         end
 
         # Set an attribute on the DatabaseHandle.
         def []= (attr, val)
-            sanity_check
             @handle[attr] = val
         end
-
-        protected
-
-        def sanity_check(stmt=nil)      
-            raise InterfaceError, "Database connection was already closed!" if @handle.nil?
-            check_statement(stmt) if stmt
-        end
-
-        # basic sanity checks for statements
-        def check_statement(stmt)
-            raise InterfaceError, "Statement is empty, or contains nothing but whitespace" if stmt !~ /\S/
-        end
-    end
+    end #-- class DatabaseHandle
 end
