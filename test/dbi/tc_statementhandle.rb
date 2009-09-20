@@ -7,8 +7,9 @@ class TC_DBI_StatementHandle < Test::Unit::TestCase
         mock_handle = 'any_object'
         def mock_handle.cancel; end
         def mock_handle.column_info; {}; end
+        def mock_handle.execute; nil; end
         def mock_handle.fetch; nil; end
-        sth = DBI::StatementHandle.new( mock_handle, true, true, false, true)
+        sth = DBI::StatementHandle.new( mock_handle, false)
         
         10.times do
             assert_nil sth.fetch
