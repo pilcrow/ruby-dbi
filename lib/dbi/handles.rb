@@ -40,7 +40,26 @@ module DBI
             raise InterfaceError, "Wrong # of arguments for driver specific function"
         end
 
-        # error functions?
+        private
+        def dummy_handle
+            @dummy_handle ||= NilHandle.new(self.class)
+        end
+    end
+
+    # A "Null Object" for closed DBD @handles (DBI::Base derivatives)
+    class NilHandle # :nodoc:
+        attr_reader :handle_type
+
+        def initialize(handle_klass)
+            # <Class DBI::Handle::FooHandle> --> "Foo"
+            @handle_type = handle_klass.name.
+                               sub(/^DBI::Handle::/, '').
+                               sub(/Handle$/, '')
+        end
+
+        def method_missing(sym, *args)
+            raise InterfaceError, "#{handle_type} handle was already closed"
+        end
     end
 end
 
