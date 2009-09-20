@@ -141,6 +141,7 @@ module DBI
             @handle.raises_an_exception if finished?
             @handle.cancel if @fetchable
             @fetchable = false
+            @row = nil
         end
 
         #
@@ -185,7 +186,6 @@ module DBI
             @handle.rows
         end
 
-
         #
         # See BaseStatement#fetch.
         #
@@ -193,27 +193,7 @@ module DBI
         # similar fashion to Enumerable#collect. See #each.
         #
         def fetch(&p)
-            check_fetchable
-
-            if block_given? 
-                while (res = @handle.fetch) != nil
-                    @row = @row.dup
-                    @row.set_values(res)
-                    yield @row
-                end
-                cancel
-                return nil
-            else
-                res = @handle.fetch
-                if res.nil?
-                    cancel
-                else
-                    @row = @row.dup
-                    @row.set_values(res)
-                    res = @row
-                end
-                return res
-            end
+            _fetch(:fetch_conversion_dbi_row, &p)
         end
 
         #
@@ -229,20 +209,8 @@ module DBI
         # DBI::Row objects (and therefore does not perform type mapping). This
         # is basically a way to get the raw data from the DBD.
         #
-        def fetch_array
-            check_fetchable
-
-            if block_given? 
-                while (res = @handle.fetch) != nil
-                    yield res
-                end
-                cancel
-                return nil
-            else
-                res = @handle.fetch
-                cancel if res.nil?
-                return res
-            end
+        def fetch_array(&p)
+            _fetch(:fetch_conversion_raw, &p)
         end
 
         #
@@ -250,74 +218,37 @@ module DBI
         #
         # No type conversion is performed here. Expect this to change in 0.6.0.
         #
-        def fetch_hash
-            check_fetchable
-
-            cols = column_names
-
-            if block_given? 
-                while (row = @handle.fetch) != nil
-                    hash = {}
-                    row.each_with_index {|v,i| hash[cols[i]] = v} 
-                    yield hash
-                end
-                cancel
-                return nil
-            else
-                row = @handle.fetch
-                if row.nil?
-                    cancel
-                    return nil
-                else
-                    hash = {}
-                    row.each_with_index {|v,i| hash[cols[i]] = v} 
-                    return hash
-                end
-            end
+        def fetch_hash(&p)
+            _fetch(:fetch_conversion_hash, &p)
         end
 
         #
         # Fetch `cnt` rows. Result is array of DBI::Row
         #
         def fetch_many(cnt)
-            check_fetchable
+            check_fetchable!
 
-            cols = column_names
-            rows = @handle.fetch_many(cnt)
-            if rows.nil? or rows.empty?
-                cancel
-                return []
-            else
-                return rows.collect{|r| tmp = @row.dup; tmp.set_values(r); tmp }
-            end
+            rows = @handle.fetch_many(cnt) || []
+            return rows.collect{|r| fetch_conversion_dbi_row(r)}
         end
 
         # 
         # Fetch the entire result set. Result is array of DBI::Row.
         #
         def fetch_all
-            check_fetchable
-
-            cols = column_names
-            fetched_rows = []
-
+            ret = []
             begin
-                while row = fetch do
-                    fetched_rows.push(row)
-                end
+                fetch do |r| ret << r end
             rescue Exception
             end
-
-            cancel
-
-            return fetched_rows
+            ret
         end
 
         #
         # See BaseStatement#fetch_scroll.
         #
         def fetch_scroll(direction, offset=1)
-            check_fetchable
+            check_fetchable!
 
             row = @handle.fetch_scroll(direction, offset)
             if row.nil?
@@ -341,7 +272,50 @@ module DBI
         
         protected
 
-        def check_fetchable
+        # fetch() and friends
+        #
+        # _fetch method pulls results from the underlying driver, mapping
+        # to user-requested formats via fetch_conversion_* methods
+        #
+        def _fetch(converter, &p)
+            if !@row
+                raise InterfaceError, "StatementHandle hasn't been executed yet"
+            end
+            check_fetchable!
+
+            if p
+                while res = @handle.fetch
+                    yield __send__(converter, res)
+                end
+                nil
+            end
+
+            res = @handle.fetch
+            return __send__(converter, res) if res
+        end
+
+
+        # Fetch conversion functions, mapping a @handle.result to the
+        # caller's requested format (fetch_hash, etc.)
+        def fetch_conversion_hash(raw_row)
+            ::Hash[*column_names.zip(raw_row).flatten]
+        end
+
+        def fetch_conversion_raw(raw_row); raw_row end
+
+        def fetch_conversion_dbi_row(raw_row)
+            @row = @row.dup
+            @row.set_values(raw_row)
+            @row
+        end
+
+        # Boolean indicating whether this sth has been executed and
+        # not cancelled nor finished, whether or not it is still fetchable
+        def executed?
+            return !@row.nil?
+        end
+
+        def check_fetchable!
             @handle.raises_an_exception if finished?
 
             if !@fetchable and @raise_error
