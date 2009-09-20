@@ -1,3 +1,7 @@
+FIXME
+	- check_fetchable logic wrong for fetch_* methods
+	  want to err out if not yet executed...
+
 Handle
 	- dummy_handle
 
