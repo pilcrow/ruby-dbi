@@ -297,6 +297,7 @@ module DBI
                 return __send__(converter, res) if res
             else
                 @fetchable = false
+                nil
             end
         end
 

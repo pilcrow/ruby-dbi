@@ -71,7 +71,7 @@ class TC_DBI_StatementHandle < Test::Unit::TestCase
             assert_nil @sth.fetch
         end
 
-        assert_false @sth.fetchable?
+        assert_equal false, @sth.fetchable?
 
         counter = 0
         10.times do
