@@ -2,6 +2,7 @@ FIXME
 	- check_fetchable logic wrong for fetch_* methods
 	  want to err out if not yet executed...
     - ** add explicit general DBI tests for that **
+	- ensure fetchable? is false after exhausting sth by all fetch_
 
 Handle
 	- dummy_handle
