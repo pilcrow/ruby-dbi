@@ -44,14 +44,15 @@ module DBI
                     caller_err = "not available"
                 end
             when ArgumentError
-                arity = @handle.method(name).arity
-                if (arity >= 0 and values.size != arity) \
-                   or \
-                   (values.size < (arity.abs - 1))
-                    caller_err = "wrong number of arguments"
+                m = @handle.method(name)
+                unless DBI::Utils::arity_satisfied?(m, values)
+                    caller_err = "wrong number of arguments (#{values.size} for #{DBI::Utils::hard_arity(m)})"
                 end
             when LocalJumpError
-                # good effort, works under MRI 1.8 and 1.9
+                # good effort, works under MRI 1.8 and 1.9.
+                # An alternative is to measure relative stack depth
+                # difference between caller(0) and $!.backtrace (which
+                # difference varies from 1.8 to 1.9)
                 if !block_given? and $!.backtrace[0] =~ %r"\b#{Regexp.quote(name)}\b"
                     caller_err = "no block given"
                 end

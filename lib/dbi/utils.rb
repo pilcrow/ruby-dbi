@@ -37,6 +37,24 @@ module DBI
             end
             hash 
         end
+
+        # 
+        # check whether the given method's arity would be satisfied
+        # by the given args
+        #
+        # Used in DatabaseHande#func error handling
+        #
+        def self.arity_satisfied?(method_obj, args)
+            arity = method_obj.arity
+            return (arity >= 0) ?
+                   (args.size == arity) :
+                   (args.size >= (arity.abs - 1))
+        end
+
+        def self.hard_arity(method_obj)
+            arity = method_obj.arity
+            return (arity >= 0) ? arity : (arity.abs - 1)
+        end
     end # module Utils
 end # module DBI
 
