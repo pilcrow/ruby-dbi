@@ -240,6 +240,7 @@ module DBI
             begin
                 fetch do |r| ret << r end
             rescue Exception
+                cancel
             end
             ret
         end
@@ -287,11 +288,16 @@ module DBI
                 while res = @handle.fetch
                     yield __send__(converter, res)
                 end
+                @fetchable = false
                 nil
             end
 
             res = @handle.fetch
-            return __send__(converter, res) if res
+            if res
+                return __send__(converter, res) if res
+            else
+                @fetchable = false
+            end
         end
 
 
@@ -307,12 +313,6 @@ module DBI
             @row = @row.dup
             @row.set_values(raw_row)
             @row
-        end
-
-        # Boolean indicating whether this sth has been executed and
-        # not cancelled nor finished, whether or not it is still fetchable
-        def executed?
-            return !@row.nil?
         end
 
         def check_fetchable!
