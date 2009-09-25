@@ -1,6 +1,9 @@
 #
 # See DBI::BaseDatabase.
 #
+
+require 'set'
+
 class DBI::DBD::Pg::Database < DBI::BaseDatabase
 
     # type map 
@@ -24,6 +27,7 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
     }
 
     attr_reader :type_map
+    attr_reader :prepared_plans  # see Pg::Statement.new
 
     #
     # See DBI::BaseDatabase#new. These attributes are also supported:
@@ -52,6 +56,7 @@ class DBI::DBD::Pg::Database < DBI::BaseDatabase
 
         @exec_method = :exec
         @in_transaction = false
+        @prepared_plans = ::Set.new  # see Pg::Statement.new
 
         # set attribute defaults, and look for pg_* attrs in the DSN
         @attr = { 'AutoCommit' => true, 'pg_async' => false }

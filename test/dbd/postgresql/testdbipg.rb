@@ -20,8 +20,8 @@ class TestDbdPostgres < DBDConfig.testbase(:postgresql)
 
     # this monkeypatch is used for the following test... NEVER integrate this into DBI proper.
     class DBI::StatementHandle < DBI::Handle
-        def stmt_name
-            @handle.instance_variable_get(:@stmt_name)
+        def internal_name
+            @handle.instance_variable_get(:@plan_name)
         end
     end
 
@@ -45,25 +45,46 @@ class TestDbdPostgres < DBDConfig.testbase(:postgresql)
         end
     end
 
-    def test_statement_finish_deallocates_sth
+    def test_statement_finish_deallocates_pg_plan
         assert_nothing_raised do
             @sth = @dbh.prepare("select * from names")
             @sth.execute
-            sth_internal_name = @sth.stmt_name
+            sth_internal_name = @sth.internal_name
             assert(sth_internal_name)
             assert(!sth_internal_name.empty?)
+            assert_raises(DBI::ProgrammingError) do
+                # Should collide with extant plan name
+                @dbh.do("PREPARE \"#{sth_internal_name}\" AS SELECT 1")
+            end
             @sth.finish
 
-            # at this point, the statement name should no longer exist
-            #
-            # XXX this is a potentially horrible way of doing it since it'll
-            # create another prepared statement, but *at this time*, I don't
-            # see any drawbacks and the alternative is considerably uglier.
-            
-            @sth = @dbh.prepare("select count(*) from pg_prepared_statements where name = ?")
-            @sth.execute(sth_internal_name)
-            assert_equal([0], @sth.fetch)
-            @sth.finish
+            # Now no collision
+            assert_nothing_raised do
+                @dbh.do("PREPARE \"#{sth_internal_name}\" AS SELECT 1")
+            end
+        end
+    end
+
+    def test_prepare_block_deallocates_pg_plan
+        assert_nothing_raised do
+            sth_internal_name = nil
+
+            @dbh.prepare("select * from names") do |sth|
+                sth.execute
+                sth_internal_name = sth.internal_name
+                assert(sth_internal_name)
+                assert(!sth_internal_name.empty?)
+                assert_raises(DBI::ProgrammingError) do
+                    # Should collide with extant plan name
+                    @dbh.do("PREPARE \"#{sth_internal_name}\" AS SELECT 1")
+                end
+            end
+
+            # if finish did not remove the pg plan name, the following
+            # PREPARE will fail with a low-level name collision.
+            assert_nothing_raised do
+                @dbh.do("PREPARE \"#{sth_internal_name}\" AS SELECT 1")
+            end
         end
     end
 
