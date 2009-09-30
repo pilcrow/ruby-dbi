@@ -136,10 +136,14 @@ module DBI::DBD::Mysql
             server_version = major.to_i*10000 + minor.to_i*100 + teeny.to_i
             # It's not until 3.23.17 that SET AUTOCOMMIT,
             # BEGIN, COMMIT, and ROLLBACK all are available
-            @have_transactions = (server_version >= 32317)
+            stub_out_transaction_support if server_version < 32317
             # assume that the connection begins in AutoCommit mode
             @attr['AutoCommit'] = true
-            @mutex = Mutex.new 
+        end
+
+        def _connection # :nodoc:
+            # for use by My::Stmt
+            return @handle
         end
 
         def disconnect
@@ -150,20 +154,16 @@ module DBI::DBD::Mysql
         end
 
         def database_name
-            sth = Statement.new(self, @handle, "select DATABASE()", @mutex)
-            sth.execute
-            res = sth.fetch
-            sth.finish
-            return res[0]
+            DBI::DatabaseHandle.new(self).select_one("SELECT DATABASE()")[0]
+        rescue MyError => err
+            error(err)
         end
 
         def ping
-            begin
-                @handle.ping
-                return true
-            rescue MyError
-                return false
-            end
+            @handle.ping
+            true
+        rescue MyError
+            false
         end
 
         def tables
@@ -213,7 +213,8 @@ module DBI::DBD::Mysql
                     col['unique']         = uniques.index(name) != nil
                     col['precision']      = size
                     col['scale']          = decimal
-                    col['default']        = row[4]
+                    col['default']        = default
+                    # XXX col['mysql_extra'] = extra
 
                     case col['type_name']
                     when 'timestamp'
@@ -228,7 +229,7 @@ module DBI::DBD::Mysql
         end
 
         def do(stmt, *bindvars)
-            st = Statement.new(self, @handle, stmt, @mutex)
+            st = Statement.new(self, stmt)
             st.bind_params(*bindvars)
             res = st.execute
             st.finish
@@ -239,36 +240,50 @@ module DBI::DBD::Mysql
 
 
         def prepare(statement)
-            Statement.new(self, @handle, statement, @mutex)
+            Statement.new(self, statement)
         end
 
         #
-        # MySQL has several backends, some of which may not support commits.
-        # If the backend this database uses doesn't, calling this method will
-        # raise a DBI::NotSupportedError.
+        # MySQL has several backend "storage engines," not all of which
+        # support transactions.  See #rollback() for one strategy if your
+        # code may be dealing with such an engine.
+        # 
+        # If your version of MySQL is too old to support transactions at
+        # all (< 3.23.17), this method is replaced by a stub which raises
+        # a DBI::NotSupportedError.
         #
         def commit
-            if @have_transactions
-                self.do("COMMIT")
-            else
-                raise NotSupportedError
-            end
-        rescue MyError => err
-            error(err)
+          self.do('COMMIT') # already traps MyError
         end
 
         #
-        # See #commit for information regarding transactionless database
-        # backends.
+        # Some MySQL storage engines (physical table types), such as MyISAM,
+        # do not support transactions.  In this case, calling #rollback()
+        # will succeed, even though operations against the transactionless
+        # tables will not be rolled back.
+        #
+        # MySQL communicates this situation as a driver-level warning, which
+        # you might check for like so:
+        #
+        #   dbh.rollback
+        #   if dbh.func(:warning_count) > 0
+        #     warnings = dbh.select_all('SHOW WARNINGS')
+        #     rollback_actually_failed = warnings.find { |row|
+        #       row[1] == ::MysqlError::ER_WARNING_NOT_COMPLETE_ROLLBACK
+        #     }
+        #     # Er, now what?
+        #   end
+        #
+        # Note that doing so requires intimacy with the peculiars of your
+        # driver and server version, which is contrary to the spirit of the
+        # DBI.
+        #
+        # If your version of MySQL is too old to support transactions at
+        # all (< 3.23.17), this method is replaced by a stub which raises
+        # a DBI::NotSupportedError.
         #
         def rollback
-            if @have_transactions
-                self.do("ROLLBACK")
-            else
-                raise NotSupportedError
-            end
-        rescue MyError => err
-            error(err)
+            self.do('ROLLBACK') # already traps MyError
         end
 
 
@@ -293,13 +308,7 @@ module DBI::DBD::Mysql
         def []=(attr, value)
             case attr
             when 'AutoCommit'
-                if @have_transactions
-                    self.do("SET AUTOCOMMIT=" + (value ? "1" : "0"))
-                else
-                    raise NotSupportedError
-                end
-            else
-                raise NotSupportedError
+                self.do("SET AUTOCOMMIT=" + (value ? "1" : "0"))
             end
 
             @attr[attr] = value
@@ -344,6 +353,23 @@ module DBI::DBD::Mysql
             return sqltype, type, size, decimal
         end
 
+        #
+        # Called by #initialize() if server version is too old to support
+        # transactions.
+        #
+        def stub_out_transaction_support
+            class << self
+                def commit;   raise DBI::NotSupportedError end
+                def rollback; raise DBI::NotSupportedError end
+                def []=(key, value)
+                    if key == 'AutoCommit' and !value
+                        raise DBI::NotSupportedError
+                    end
+                    super
+                end
+            end
+        end
+
         #--
         # Driver-specific functions ------------------------------------------------
         #++
@@ -352,54 +378,93 @@ module DBI::DBD::Mysql
 
         def __createdb(db)
             @handle.create_db(db)
+        rescue MyError => err
+            error(err)
         end
 
         def __dropdb(db)
             @handle.drop_db(db)
+        rescue MyError => err
+            error(err)
         end
 
         def __shutdown
             @handle.shutdown
+        rescue MyError => err
+            error(err)
         end
 
         def __reload
             @handle.reload
+        rescue MyError => err
+            error(err)
         end
 
         def __insert_id
             @handle.insert_id
+        rescue MyError => err
+            error(err)
         end
 
         def __thread_id
             @handle.thread_id
+        rescue MyError => err
+            error(err)
         end
 
         def __info
             @handle.info
+        rescue MyError => err
+            error(err)
         end
 
         def __host_info
             @handle.host_info
+        rescue MyError => err
+            error(err)
         end
 
         def __proto_info
             @handle.proto_info
+        rescue MyError => err
+            error(err)
         end
 
         def __server_info
             @handle.server_info
+        rescue MyError => err
+            error(err)
         end
 
         def __client_info
             @handle.client_info
+        rescue MyError => err
+            error(err)
         end
 
         def __client_version
             @handle.client_version
+        rescue MyError => err
+            error(err)
         end
 
         def __stat
             @handle.stat
+        rescue MyError => err
+            error(err)
         end
+
+        def __warning_count
+            @handle.warning_count
+        rescue MyError => err
+            error(err)
+        end
+
+        def __sqlstate
+            @handle.sqlstate
+        rescue MyError => err
+            error(err)
+        end
+
     end # class Database
 end
