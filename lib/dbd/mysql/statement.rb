@@ -5,10 +5,10 @@ module DBI::DBD::Mysql
     class Statement < DBI::BaseStatement
         include Util
 
-        def initialize(parent, handle, statement, mutex)
+        def initialize(parent, statement)
             super(nil)
 
-            @parent, @handle, @mutex = parent, handle, mutex
+            @parent = parent
             @params = []
 
             @prep_stmt = DBI::SQL::PreparedStatement.new(@parent, statement)
@@ -30,14 +30,12 @@ module DBI::DBD::Mysql
         # what MySQL thinks is the row processed count.
         #
         def execute
+            mysql_handle = @parent._connection
             sql = @prep_stmt.bind(@params)
-            @mutex.synchronize {
-                @handle.query_with_result = true
-                @res_handle = @handle.query(sql)
-                @column_info = self.column_info
-                @current_row = 0
-                @rows = DBI::SQL.query?(sql) ? 0 : @handle.affected_rows 
-            }
+            mysql_handle.query_with_result = true
+            @res_handle = mysql_handle.query(sql)
+            @current_row = 0
+            @rows = DBI::SQL.query?(sql) ? 0 : mysql_handle.affected_rows 
         rescue MyError => err
             error(err)
         end
@@ -116,7 +114,7 @@ module DBI::DBD::Mysql
         # * mysql_flags: Internal MySQL flags on this column.
         #
         def column_info
-            retval = []
+            return @column_info.dup if @column_info
 
             return [] if @res_handle.nil?
 
@@ -127,6 +125,7 @@ module DBI::DBD::Mysql
             # Note: Cannot get 'default' column attribute because MysqlField.def
             # is set only by mysql_list_fields()
 
+            @column_info = []
             @res_handle.fetch_fields.each {|col| 
                 mysql_type_name, dbi_type = Database::TYPE_MAP[col.type] rescue [nil, nil]
                 xopen_info = Database::MYSQL_to_XOPEN[mysql_type_name] ||
@@ -134,7 +133,7 @@ module DBI::DBD::Mysql
                 sql_type = xopen_info[0]
                 type_name = DBI::SQL_TYPE_NAMES[sql_type]
 
-                retval << {
+                @column_info << {
                     # Standard Ruby DBI column attributes
                     'name'        => col.name,
                     'sql_type'    => sql_type,
@@ -156,13 +155,13 @@ module DBI::DBD::Mysql
                     'mysql_flags'      => col.flags
                 }
 
-                if retval[-1]['sql_type'] == DBI::SQL_TINYINT and retval[-1]['precision'] == 1
-                    retval[-1]['dbi_type'] = DBI::Type::Boolean
+                if @column_info[-1]['sql_type'] == DBI::SQL_TINYINT and @column_info[-1]['precision'] == 1
+                    @column_info[-1]['dbi_type'] = DBI::Type::Boolean
                 elsif dbi_type
-                    retval[-1]['dbi_type'] = dbi_type
+                    @column_info[-1]['dbi_type'] = dbi_type
                 end
             }
-            retval
+            @column_info.dup
         rescue MyError => err
             error(err)
         end
