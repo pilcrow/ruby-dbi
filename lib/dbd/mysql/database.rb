@@ -57,10 +57,10 @@ module DBI::DBD::Mysql
         #
         TYPE_MAP = {}
 
-        ::Mysql::Field.constants.grep(/^TYPE_/).each do |const|
-            mysql_type = MysqlField.const_get(const)  # numeric type code
-            coercion_method = DBI::Type::Varchar                 # default coercion method
-            case const
+        ::Mysql::Field.constants.grep(/^TYPE_/).each do |sym|
+            mysql_type = MysqlField.const_get(sym)  # numeric type code
+            coercion_method = DBI::Type::Varchar    # default coercion method
+            case sym.to_s
             when 'TYPE_TINY'
                 mysql_type_name = 'TINYINT'
                 coercion_method = DBI::Type::Integer
@@ -111,7 +111,7 @@ module DBI::DBD::Mysql
                  'TYPE_SET',
                  'TYPE_BIT',
                  'TYPE_NULL'
-                mysql_type_name = const.sub(/^TYPE_/, '')
+                mysql_type_name = sym.to_s.sub(/^TYPE_/, '')
             else
                 mysql_type_name = 'UNKNOWN'
             end
