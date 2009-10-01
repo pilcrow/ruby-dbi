@@ -207,12 +207,13 @@
     def test_driver_name # see rf-27220
         drv = 'FauxSqlConnector'
 
-        assert !@dbh.driver_name.frozen?
+        assert !drv.frozen?
         assert_nothing_raised do
           @dbh.driver_name = drv
         end
+        assert !drv.frozen?
+
         assert_equal 'FauxSqlConnector', @dbh.driver_name
-        assert !@dbh.driver_name.frozen?
         drv.upcase!
         assert_equal 'FauxSqlConnector', @dbh.driver_name
     end
