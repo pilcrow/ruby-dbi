@@ -204,7 +204,7 @@
         @sth.finish
     end
 
-    def test_driver_name
+    def test_driver_name # see rf-27220
         drv = 'FauxSqlConnector'
 
         assert !@dbh.driver_name.frozen?
