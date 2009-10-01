@@ -22,7 +22,7 @@ module DBI
         # Assign the driver name. This can be leveraged to create custom type
         # management via DBI::TypeUtil#convert.
         def driver_name=(name)
-            @driver_name = name
+            @driver_name = name.dup
             @driver_name.freeze
         end
 

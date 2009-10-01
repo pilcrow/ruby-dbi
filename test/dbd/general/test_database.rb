@@ -203,4 +203,17 @@
         assert_equal [ "Billy", 22 ], @sth.fetch
         @sth.finish
     end
+
+    def test_driver_name
+        drv = 'FauxSqlConnector'
+
+        assert !@dbh.driver_name.frozen?
+        assert_nothing_raised do
+          @dbh.driver_name = drv
+        end
+        assert_equal 'FauxSqlConnector', @dbh.driver_name
+        assert !@dbh.driver_name.frozen?
+        drv.upcase!
+        assert_equal 'FauxSqlConnector', @dbh.driver_name
+    end
 end
