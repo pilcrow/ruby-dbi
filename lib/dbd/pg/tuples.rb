@@ -63,12 +63,11 @@ class DBI::DBD::Pg::Tuples
     def fetchrow
         @index += 1
         if @index < @pg_result.num_tuples && @index >= 0
-            @row = @pg_result[@index].values_at(*colnames)
-            #@row = Array.new(@pg_result.num_fields)
-            #0.upto(@pg_result.num_fields-1) do |x|
-            #    @row[x] = @pg_result.getvalue(@index, x)
-            #end
-            #@row
+            @row = Array.new
+            0.upto(@pg_result.num_fields-1) do |x|
+                @row.push(@pg_result.getvalue(@index, x))
+            end
+            @row
         else
             nil
         end
@@ -118,10 +117,5 @@ class DBI::DBD::Pg::Tuples
 
     def finish
         @pg_result.clear
-    end
-
-    private
-    def colnames
-        @colnames ||= self.column_info.collect {|col| col['name']}
     end
 end # Tuples
