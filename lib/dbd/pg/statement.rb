@@ -123,7 +123,7 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
             @db.prepared_plans.delete(@plan_name)
         end
     rescue PGError
-        raise DBI::InternalError("internal DEALLOCATE #@plan_name failed")
+        raise DBI::InternalError.new("internal DEALLOCATE #@plan_name failed #{$!}")
     end
 
     # prepare the statement at a lower level.
