@@ -5,31 +5,21 @@
 # Peculiar Statement responsibilities:
 #  - Translate dbi params (?, ?, ...) to Pg params ($1, $2, ...)
 #  - Translate DBI::Binary objects to Pg large objects (lo_*)
-#  - Track underlying "prepared query plans"
-#
-#    Note that we refer to PostgreSQL's prepared statements as
-#    "plans" (borrowed from the PostgreSQL manual's statement syntax
-#    for PREPARE/DEALLOCATE commands) to disambiguate between these
-#    underlying constructs from the DBD::Pg::Statement and a typical
-#    DBI::StatementHandle.
 
 class DBI::DBD::Pg::Statement < DBI::BaseStatement
 
-    PG_PLAN_NAME_PREFIX = 'ruby-dbi:Pg:'
+    PG_STMT_NAME_PREFIX = 'ruby-dbi:Pg:'
 
     def initialize(db, sql)
         super(db)
         @db  = db
         @sql = sql
-        @plan_name = PG_PLAN_NAME_PREFIX + self.object_id.to_s
+        @stmt_name = PG_STMT_NAME_PREFIX + self.object_id.to_s + ::Time.now.to_f.to_s
         @result = nil
         @bindvars = []
-
-        # Clean up nicely if someone forgot to finish() a previous but
-        # now finalized Pg::Statement which happened to have our same
-        # object_id, and so our same @plan_name.
-        # See [bug rf-27113]
-        internal_safe_deallocate()
+        @prepared = false
+    rescue PGError => err
+        raise DBI::ProgrammingError.new(err.message)
     end
 
     def bind_param(index, value, options)
@@ -41,7 +31,7 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
     #
     def execute
         # We presently have to do the DBI::Binary -> BLOB conversion ourself.
-        # See DBI::DBD::Pg::Database#_convert_if_binary
+        # See DBI::DBD::Pg::Database#convert_if_binary
         @bindvars.collect! do |param|
             @db._convert_if_binary(param)
         end
@@ -53,7 +43,7 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
             @db.start_transaction unless @db.in_transaction?
         end
 
-        pg_result = @db._exec_prepared(@plan_name, *@bindvars)
+        pg_result = @db._exec_prepared(@stmt_name, *@bindvars)
 
         @result = DBI::DBD::Pg::Tuples.new(@db, pg_result)
     rescue PGError, RuntimeError => err
@@ -68,14 +58,8 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
         @result.fetch_scroll(direction, offset)
     end
 
-    #
-    # pg result:  Release resources, if any
-    # pg plan:    DEALLOCATE handle, if PREPAREd
-    #
     def finish
-        @result.finish if @result
-        internal_safe_deallocate
-
+        internal_finish
         @result = nil
         @db = nil
     end
@@ -117,23 +101,18 @@ class DBI::DBD::Pg::Statement < DBI::BaseStatement
     private 
 
     # finish the statement at a lower level
-    def internal_safe_deallocate
-        if @db.prepared_plans.include?(@plan_name)
-            @db._exec("DEALLOCATE \"#{@plan_name}\"")
-            @db.prepared_plans.delete(@plan_name)
-        end
-    rescue PGError
-        raise DBI::InternalError.new("internal DEALLOCATE #@plan_name failed #{$!}")
+    def internal_finish
+        @result.finish if @result
+        @db._exec("DEALLOCATE \"#{@stmt_name}\"") if @prepared rescue nil
     end
 
     # prepare the statement at a lower level.
     def internal_prepare
-        return if @db.prepared_plans.include?(@plan_name)
+        return if @prepared
 
         pg_parameters = self.class.translate_param_markers(@sql)
-        @db._prepare(@plan_name, pg_parameters)
-
-        @db.prepared_plans.add(@plan_name)
+        @stmt = @db._prepare(@stmt_name, pg_parameters)
+        @prepared = true
     end
 
     # -- class methods --
