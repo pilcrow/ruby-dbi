@@ -47,9 +47,9 @@ module DBI
         # Represents a SQL NULL.
         #
         class Null
-            @@re = ::Regexp.new(/^null$/i)
             def self.parse(obj)
-                return @@re === obj ? nil : obj
+                return nil if obj.to_s.match(/^null$/i)
+                return obj
             end
         end
 
