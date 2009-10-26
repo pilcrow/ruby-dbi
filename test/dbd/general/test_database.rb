@@ -8,9 +8,44 @@
         @sth = @dbh.execute("select * from names")
         @sth.finish
         assert_equal "select * from names", @dbh.last_statement
-         
+
         @dbh.do("select * from names")
         assert_equal "select * from names", @dbh.last_statement
+
+        # statement execution sets .last_statement
+        @dbh.prepare("SELECT age FROM names") do |sth|
+          assert_equal "SELECT age FROM names", @dbh.last_statement
+
+          @dbh.execute("select * from names")
+          assert_equal "select * from names", @dbh.last_statement
+
+          sth.execute()
+        end
+        assert_equal "SELECT age FROM names", @dbh.last_statement
+
+        sth_name = @dbh.prepare('SELECT name FROM names')
+        sth_age  = @dbh.prepare('SELECT age FROM names')
+
+        sth_name.execute()
+        assert_equal "SELECT name FROM names", @dbh.last_statement
+
+        sth_age.execute()
+        assert_equal "SELECT age FROM names", @dbh.last_statement
+    end
+
+    def test_last_statement_error
+        # bogus table
+        begin
+            @dbh.prepare("SELECT * FROM this_table_does_not_exist") { |sth|
+              sth.execute
+            }
+        rescue
+        end
+        assert_equal "SELECT * FROM this_table_does_not_exist", @dbh.last_statement
+
+        # missing parameter
+        @dbh.execute("SELECT age FROM names WHERE 1=?") rescue nil
+        assert_equal "SELECT age FROM names", @dbh.last_statement
     end
 
     def test_empty_query

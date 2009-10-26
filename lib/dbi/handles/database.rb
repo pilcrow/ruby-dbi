@@ -54,6 +54,7 @@ module DBI
             sth = StatementHandle.new(@handle.prepare(stmt), false, true, @convert_types)
             # FIXME trace sth.trace(@trace_mode, @trace_output)
             sth.dbh = self
+            sth.stmt = stmt
             sth.raise_error = raise_error
 
             if block_given?
@@ -81,6 +82,7 @@ module DBI
             sth = StatementHandle.new(@handle.execute(stmt, *bindvars), true, true, @convert_types, true)
             # FIXME trace sth.trace(@trace_mode, @trace_output)
             sth.dbh = self
+            sth.stmt = stmt
             sth.raise_error = raise_error
 
             if block_given?

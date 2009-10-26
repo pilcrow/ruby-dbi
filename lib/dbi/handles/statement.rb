@@ -12,6 +12,7 @@ module DBI
         include Enumerable
 
         attr_accessor :dbh
+        attr_accessor :stmt
         attr_accessor :raise_error
 
         def initialize(handle, fetchable=false, prepared=true, convert_types=true, executed=false)
@@ -71,7 +72,7 @@ module DBI
         #
         def bind_coltype(pos, type)
             sanity_check({:prepared => true, :executed => true})
-            
+
             coltypes = column_types
 
             if (pos - 1) < 1
@@ -105,7 +106,7 @@ module DBI
         #
         # If arguments are supplied, these are fed to #bind_param.
         def execute(*bindvars)
-            cancel     # cancel before 
+            cancel     # cancel before
             sanity_check({:prepared => true })
 
             if @convert_types
@@ -113,6 +114,9 @@ module DBI
             end
 
             @handle.bind_params(*bindvars)
+            # Shhh - we know something about our parent's internal structure
+            # that others don't.
+            dbh.instance_variable_set(:@last_statement, @stmt)
             @handle.execute
             @fetchable = true
             @executed = true
