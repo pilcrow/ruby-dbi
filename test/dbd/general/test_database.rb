@@ -8,7 +8,7 @@
         @sth = @dbh.execute("select * from names")
         @sth.finish
         assert_equal "select * from names", @dbh.last_statement
-         
+
         @dbh.do("select * from names")
         assert_equal "select * from names", @dbh.last_statement
     end
@@ -113,6 +113,17 @@
         @sth.execute("Billy")
         assert_equal ["Billy", 21], @sth.fetch
         @sth.finish
+    end
+
+    def test_database_name
+      assert_nothing_raised do
+        # This is *probably* a string, but is unlikely to be consistent
+        # across DBDs.  MySQL, for instance, doesn't support SQL catalogs,
+        # and so has a long history of referring to SQL schemas as
+        # 'databases', and one can imagine a SQL-ish backend that returns
+        # nil for this attribute.
+        @dbh.database_name
+      end
     end
 
     def test_tables

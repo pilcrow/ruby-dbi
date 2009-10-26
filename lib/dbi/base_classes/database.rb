@@ -59,7 +59,13 @@ module DBI
         def columns(table)
             raise NotImplementedError
         end
-        
+
+        # Return the name of the current database (a.k.a. SQL catalog)
+        # associated with the database connection.  DBD Required.
+        def database_name
+            raise NotImplementedError
+        end
+
         #============================================
         # OPTIONAL
         #============================================
